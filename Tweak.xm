@@ -592,8 +592,8 @@ static void InstallHooks(void) {
 //
 // Ownership note: SecItemCopyMatching returns a +1 retained CF object when
 // errSecSuccess. All Security framework return types are toll-free bridged
-// with their Foundation counterparts, so CFRelease / __bridge_retained work
-// identically for both pure CF and bridged NS objects.
+// with their Foundation counterparts, so CFRelease plus normal retain/copy
+// ownership conventions work identically for pure CF and bridged NS objects.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #define DYLD_INTERPOSE(_replacement, _replacee) \
@@ -682,7 +682,7 @@ DYLD_INTERPOSE(my_SecItemCopyMatching, SecItemCopyMatching)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Replaces any 64-char hex kSecValueData in attrs with the custom device ID.
-/// Returns a new autoreleased dictionary, or nil if nothing changed.
+/// Returns a new retained dictionary, or nil if nothing changed.
 static CFDictionaryRef PatchKeychainWriteAttrs(CFDictionaryRef attrs) {
     if (!sTweakEnabled || !sCustomDeviceID || sCustomDeviceID.length == 0)
         return nil;
