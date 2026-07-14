@@ -330,6 +330,17 @@ static BOOL isHexChar(unichar c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
+/// Returns a random 64-character lowercase hex string (256-bit random value).
+static NSString *randomHex64(void) {
+    uint8_t bytes[32];
+    arc4random_buf(bytes, sizeof(bytes));
+    NSMutableString *hex = [NSMutableString stringWithCapacity:64];
+    for (int i = 0; i < 32; i++) {
+        [hex appendFormat:@"%02x", bytes[i]];
+    }
+    return [NSString stringWithString:hex];
+}
+
 /// Returns YES if s is exactly 64 hex characters (SHA-256 hex digest format).
 static BOOL isHex64(NSString *s) {
     if (!s || s.length != 64) return NO;
@@ -414,6 +425,7 @@ static BOOL isHex64(NSString *s) {
         else              [d removeObjectForKey:key];
         WritePrefs(d);
         LoadSettings();
+        [self.tableView reloadData];
         [self showRestartRequiredWithTitle:@"✅ تم الحفظ"
                                   message:[NSString stringWithFormat:@"تم حفظ %@.", titles[idx]]];
     }]];
@@ -426,11 +438,13 @@ static BOOL isHex64(NSString *s) {
 
 - (void)generateRandomIDs {
     NSMutableDictionary *d = ReadPrefs();
-    d[kUDIDKey] = [NSUUID UUID].UUIDString;
-    d[kIDFAKey] = [NSUUID UUID].UUIDString;
-    d[kIDFVKey] = [NSUUID UUID].UUIDString;
+    d[kUDIDKey]     = [NSUUID UUID].UUIDString;
+    d[kIDFAKey]     = [NSUUID UUID].UUIDString;
+    d[kIDFVKey]     = [NSUUID UUID].UUIDString;
+    d[kDeviceIDKey] = randomHex64();
     WritePrefs(d);
     LoadSettings();
+    [self.tableView reloadData];
     [self showRestartRequiredWithTitle:@"✅ تم التوليد"
                                message:@"تم توليد معرفات عشوائية جديدة بنجاح."];
 }
