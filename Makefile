@@ -25,6 +25,7 @@ CFLAGS  := -x objective-c \
             -miphoneos-version-min=12.0 \
             -framework UIKit \
             -framework Foundation \
+            -framework Security \
             -undefined dynamic_lookup \
             -Wno-deprecated-declarations \
             -Wno-unused-variable

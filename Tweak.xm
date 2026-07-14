@@ -21,20 +21,23 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
+#import <Security/Security.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: Constants & State
 // ─────────────────────────────────────────────────────────────────────────────
 
-static NSString * const kUDIDKey    = @"com.deviceid.custom.udid";
-static NSString * const kIDFAKey    = @"com.deviceid.custom.idfa";
-static NSString * const kIDFVKey    = @"com.deviceid.custom.idfv";
-static NSString * const kEnabledKey = @"com.deviceid.enabled";
+static NSString * const kUDIDKey      = @"com.deviceid.custom.udid";
+static NSString * const kIDFAKey      = @"com.deviceid.custom.idfa";
+static NSString * const kIDFVKey      = @"com.deviceid.custom.idfv";
+static NSString * const kDeviceIDKey  = @"com.deviceid.custom.deviceid";
+static NSString * const kEnabledKey   = @"com.deviceid.enabled";
 
-static NSString *sCustomUDID = nil;
-static NSString *sCustomIDFA = nil;
-static NSString *sCustomIDFV = nil;
-static BOOL      sTweakEnabled = YES;
+static NSString *sCustomUDID     = nil;
+static NSString *sCustomIDFA     = nil;
+static NSString *sCustomIDFV     = nil;
+static NSString *sCustomDeviceID = nil;
+static BOOL      sTweakEnabled   = YES;
 static BOOL      sButtonAdded  = NO;   // global guard – prevents double-add
 
 static NSUInteger const kMaxDisplayLength = 28; // chars shown in the ID subtitle
@@ -61,9 +64,10 @@ static void WritePrefs(NSMutableDictionary *d) {
 
 static void LoadSettings(void) {
     NSDictionary *d = ReadPrefs();
-    sCustomUDID   = d[kUDIDKey];
-    sCustomIDFA   = d[kIDFAKey];
-    sCustomIDFV   = d[kIDFVKey];
+    sCustomUDID     = d[kUDIDKey];
+    sCustomIDFA     = d[kIDFAKey];
+    sCustomIDFV     = d[kIDFVKey];
+    sCustomDeviceID = d[kDeviceIDKey];
     // If the key was never written, default to enabled (true).
     id en = d[kEnabledKey];
     sTweakEnabled = en ? [en boolValue] : YES;
@@ -220,7 +224,7 @@ static void LoadSettings(void) {
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     if (s == 0) return 2;   // Status row + toggle
-    if (s == 1) return 3;   // UDID · IDFA · IDFV
+    if (s == 1) return 4;   // UDID · IDFA · IDFV · Device ID hash
     return 2;               // Generate random · Reset all
 }
 
@@ -260,8 +264,8 @@ static void LoadSettings(void) {
         }
 
     } else if (ip.section == 1) {
-        NSArray *titles = @[@"UDID", @"IDFA", @"IDFV"];
-        NSArray *keys   = @[kUDIDKey, kIDFAKey, kIDFVKey];
+        NSArray *titles = @[@"UDID", @"IDFA", @"IDFV", @"معرف الجهاز"];
+        NSArray *keys   = @[kUDIDKey, kIDFAKey, kIDFVKey, kDeviceIDKey];
         NSString *val = ReadPrefs()[keys[ip.row]];
 
         cell.textLabel.text = titles[ip.row];
@@ -321,6 +325,20 @@ static BOOL isValidUUID(NSString *s) {
     return [[NSUUID alloc] initWithUUIDString:s] != nil;
 }
 
+/// Returns YES if every character is a lowercase or uppercase hex digit.
+static BOOL isHexChar(unichar c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+/// Returns YES if s is exactly 64 hex characters (SHA-256 hex digest format).
+static BOOL isHex64(NSString *s) {
+    if (!s || s.length != 64) return NO;
+    for (NSUInteger i = 0; i < 64; i++) {
+        if (!isHexChar([s characterAtIndex:i])) return NO;
+    }
+    return YES;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: Actions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -335,12 +353,13 @@ static BOOL isValidUUID(NSString *s) {
 }
 
 - (void)editIDAtIndex:(NSInteger)idx {
-    NSArray *titles = @[@"UDID", @"IDFA", @"IDFV"];
-    NSArray *keys   = @[kUDIDKey, kIDFAKey, kIDFVKey];
+    NSArray *titles = @[@"UDID", @"IDFA", @"IDFV", @"معرف الجهاز"];
+    NSArray *keys   = @[kUDIDKey, kIDFAKey, kIDFVKey, kDeviceIDKey];
     NSArray *hints  = @[
         @"مثال: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
         @"مثال: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
-        @"مثال: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        @"مثال: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+        @"مثال: f8545d35b7959dc75183e8fcfc916154235f7d9f9b27feed76d962c0021d68ea"
     ];
     NSString *key = keys[idx];
 
@@ -363,15 +382,28 @@ static BOOL isValidUUID(NSString *s) {
         NSString *v = [alert.textFields.firstObject.text
                        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
 
+        // معرف الجهاز (idx=3) must be exactly 64 hex characters.
+        if (v.length > 0 && idx == 3 && !isHex64(v)) {
+            UIAlertController *err = [UIAlertController
+                alertControllerWithTitle:@"❌ صيغة غير صحيحة"
+                                 message:@"يجب أن يكون المعرف 64 حرفاً سداسي عشري (SHA-256)\nمثال: f8545d35b795..."
+                          preferredStyle:UIAlertControllerStyleAlert];
+            [err addAction:[UIAlertAction actionWithTitle:@"حسناً"
+                                                    style:UIAlertActionStyleDefault
+                                                  handler:nil]];
+            [self presentViewController:err animated:YES completion:nil];
+            return;
+        }
+
         // IDFA (idx=1) and IDFV (idx=2) must be valid UUIDs so the hook
         // can reconstruct them via -[NSUUID initWithUUIDString:].
-        if (v.length > 0 && idx != 0 && !isValidUUID(v)) {
+        if (v.length > 0 && (idx == 1 || idx == 2) && !isValidUUID(v)) {
             UIAlertController *err = [UIAlertController
                 alertControllerWithTitle:@"❌ صيغة غير صحيحة"
                                  message:@"يجب أن تكون القيمة UUID صحيحة\nمثال: 550e8400-e29b-41d4-a716-446655440000"
                           preferredStyle:UIAlertControllerStyleAlert];
             [err addAction:[UIAlertAction actionWithTitle:@"حسناً"
-                                                    style:UIAlertActionStyleDefault
+                                                   style:UIAlertActionStyleDefault
                                                   handler:nil]];
             [self presentViewController:err animated:YES completion:nil];
             return;
@@ -417,6 +449,7 @@ static BOOL isValidUUID(NSString *s) {
         [d removeObjectForKey:kUDIDKey];
         [d removeObjectForKey:kIDFAKey];
         [d removeObjectForKey:kIDFVKey];
+        [d removeObjectForKey:kDeviceIDKey];
         WritePrefs(d);
         LoadSettings();
         [self.tableView reloadData];
@@ -509,6 +542,91 @@ static void InstallHooks(void) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MARK: Keychain interpose – SecItemCopyMatching
+// Intercepts keychain reads that return a 64-char hex device-ID fingerprint
+// (common pattern in apps that store a SHA-256 device hash in the keychain)
+// and replaces the value with the user-configured custom device ID.
+// DYLD_INTERPOSE patches the GOT of every image in the process, so the hook
+// fires for both the target app and any frameworks it links.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#define DYLD_INTERPOSE(_replacement, _replacee) \
+    __attribute__((used)) static struct { \
+        const void *replacement; \
+        const void *replacee; \
+    } _interpose_##_replacee \
+    __attribute__((section("__DATA,__interpose"))) = { \
+        (const void *)(unsigned long)&_replacement, \
+        (const void *)(unsigned long)&_replacee \
+    }
+
+static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
+    OSStatus status = SecItemCopyMatching(query, result);
+    if (!sTweakEnabled || !sCustomDeviceID || sCustomDeviceID.length == 0)
+        return status;
+    if (status != errSecSuccess || !result || !*result)
+        return status;
+
+    CFTypeID resultType = CFGetTypeID(*result);
+
+    // Result is a CFString (kSecReturnData=NO, kSecReturnRef=YES, etc.)
+    if (resultType == CFStringGetTypeID()) {
+        NSString *s = (__bridge NSString *)(*result);
+        if (isHex64(s)) {
+            CFRelease(*result);
+            *result = (__bridge_retained CFTypeRef)[sCustomDeviceID copy];
+        }
+        return status;
+    }
+
+    // Result is a CFData – decode as UTF-8 and check
+    if (resultType == CFDataGetTypeID()) {
+        NSData *d = (__bridge NSData *)(*result);
+        NSString *s = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
+        if (isHex64(s)) {
+            NSData *newData = [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
+            CFRelease(*result);
+            *result = (__bridge_retained CFTypeRef)newData;
+        }
+        return status;
+    }
+
+    // Result is an array of dicts (kSecReturnAttributes=YES or multi-item query)
+    if (resultType == CFArrayGetTypeID()) {
+        NSArray *items = (__bridge NSArray *)(*result);
+        NSMutableArray *patched = [NSMutableArray arrayWithCapacity:items.count];
+        BOOL changed = NO;
+        for (id item in items) {
+            if (![item isKindOfClass:[NSDictionary class]]) {
+                [patched addObject:item];
+                continue;
+            }
+            NSDictionary *dict = (NSDictionary *)item;
+            NSMutableDictionary *mDict = [dict mutableCopy];
+            // Check kSecValueData
+            NSData *vData = mDict[(__bridge id)kSecValueData];
+            if ([vData isKindOfClass:[NSData class]]) {
+                NSString *sv = [[NSString alloc] initWithData:vData encoding:NSUTF8StringEncoding];
+                if (isHex64(sv)) {
+                    mDict[(__bridge id)kSecValueData] =
+                        [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
+                    changed = YES;
+                }
+            }
+            [patched addObject:[mDict copy]];
+        }
+        if (changed) {
+            CFRelease(*result);
+            *result = (__bridge_retained CFTypeRef)[patched copy];
+        }
+    }
+
+    return status;
+}
+
+DYLD_INTERPOSE(my_SecItemCopyMatching, SecItemCopyMatching)
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MARK: Constructor – runs when the dylib is injected into any process
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -516,11 +634,12 @@ __attribute__((constructor))
 static void DeviceIDSpooferInit(void) {
     LoadSettings();
     InstallHooks();
-    NSLog(@"[DeviceIDSpoofer] Loaded  |  Tweak %@  |  UDID=%@  IDFA=%@  IDFV=%@",
+    NSLog(@"[DeviceIDSpoofer] Loaded  |  Tweak %@  |  UDID=%@  IDFA=%@  IDFV=%@  DeviceID=%@",
           sTweakEnabled ? @"ENABLED ✅" : @"DISABLED ❌",
           sCustomUDID ?: @"(real)",
           sCustomIDFA ?: @"(real)",
-          sCustomIDFV ?: @"(real)");
+          sCustomIDFV ?: @"(real)",
+          sCustomDeviceID ?: @"(real)");
 
     // Wait for the app to finish launching, then add the floating button
     [[NSNotificationCenter defaultCenter]
