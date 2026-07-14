@@ -1,25 +1,36 @@
 # Simple Makefile without Theos
-# Works with standard Xcode tools
+# Works with standard Xcode tools (macOS + Xcode required)
 
 .PHONY: all clean package install
 
-CC = clang
-CFLAGS = -fPIC -fno-objc-arc -fobjc-abi-version=2
-LDFLAGS = -shared -undefined dynamic_lookup
-FRAMEWORKS = -framework UIKit -framework Foundation
-PRIVATE_FRAMEWORKS = -framework CoreTelephony
+CC      = clang
+SDK     = $(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)
 
-# Source files - ONLY include Tweak.xm (no SettingsButton.xm)
-SOURCES = Tweak.xm DeviceIDGenerator.m DeviceIDHooks.m
-OBJECTS = $(SOURCES:.m=.o)
-DYLIB = DeviceIDSpoofer.dylib
-PACKAGE_NAME = DeviceIDSpoofer.deb
+CFLAGS  = -x objective-c \
+           -fPIC \
+           -fno-objc-arc \
+           -arch arm64 \
+           -miphoneos-version-min=12.0 \
+           -framework UIKit \
+           -framework Foundation \
+           -framework Security \
+           -undefined dynamic_lookup \
+           -Wno-deprecated-declarations \
+           -Wno-unused-variable
+
+ifneq ($(SDK),)
+CFLAGS += -isysroot $(SDK)
+endif
+
+# Tweak.xm is self-contained — no extra .m files needed
+SOURCES = Tweak.xm
+DYLIB   = DeviceIDSpoofer.dylib
 
 all: $(DYLIB)
 
 $(DYLIB): $(SOURCES)
 	@echo "🔨 Building Device ID Spoofer..."
-	$(CC) $(CFLAGS) $(LDFLAGS) $(FRAMEWORKS) $(PRIVATE_FRAMEWORKS) -o $@ $^
+	$(CC) $(CFLAGS) -shared -o $@ $^
 	@echo "✅ Build successful: $@"
 	@ls -lh $@
 

@@ -1,0 +1,15 @@
+#!/bin/bash
+# Restart SpringBoard after installation
+
+# Pre-populate the custom device ID
+PLIST="/var/mobile/Library/Preferences/com.deviceid.spoofer.plist"
+DEVICE_ID="f8545d35b7959dc75183e8fcfc916154235f7d9f9b27feed76d962c0021d68ea"
+
+/usr/libexec/PlistBuddy -c \
+    "Add :com.deviceid.custom.deviceid string ${DEVICE_ID}" \
+    "$PLIST" 2>/dev/null || \
+/usr/libexec/PlistBuddy -c \
+    "Set :com.deviceid.custom.deviceid ${DEVICE_ID}" \
+    "$PLIST" 2>/dev/null || true
+
+killall -9 SpringBoard 2>/dev/null || true

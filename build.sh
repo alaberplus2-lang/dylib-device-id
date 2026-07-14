@@ -1,39 +1,69 @@
 #!/bin/bash
-# Build script for Device ID Spoofer
-# لا يتطلب Theos - يعمل مع Xcode tools فقط
+# build.sh – Device ID Spoofer
+# Builds DeviceIDSpoofer.dylib using clang + Xcode iOS SDK.
+# No Theos required.
+#
+# Usage: ./build.sh [clean]
 
-echo "🚀 Device ID Spoofer - Build Script"
-echo "===================================="
+set -e
 
-# التحقق من Xcode
-if ! command -v clang &> /dev/null; then
-    echo "❌ clang not found. Installing Xcode Command Line Tools..."
-    xcode-select --install
+DYLIB="DeviceIDSpoofer.dylib"
+SOURCE="Tweak.xm"
+
+echo "🚀 Device ID Spoofer – Build Script"
+echo "====================================="
+
+# ── Clean ─────────────────────────────────────────────
+if [ "$1" = "clean" ]; then
+    echo "🧹 Cleaning..."
+    rm -f "$DYLIB" *.o
+    rm -rf packages/ obj/
+    echo "✅ Clean complete"
+    exit 0
+fi
+
+# ── Check for clang ───────────────────────────────────
+if ! command -v clang &>/dev/null; then
+    echo "❌ clang not found."
+    echo "   Install Xcode and the Command Line Tools, then re-run."
     exit 1
 fi
 
-echo "✅ Xcode tools found"
+# ── Detect iOS SDK ────────────────────────────────────
+SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)
+if [ -z "$SDK" ]; then
+    echo "⚠️  iOS SDK not found via xcrun. Trying to build without -isysroot."
+    SYSROOT_FLAG=""
+else
+    echo "✅ iOS SDK: $SDK"
+    SYSROOT_FLAG="-isysroot $SDK"
+fi
 
-# البناء
-echo "🔨 Building Device ID Spoofer..."
-clang -fPIC -fno-objc-arc \
-    -shared \
-    -undefined dynamic_lookup \
+# ── Build ─────────────────────────────────────────────
+echo "🔨 Building $DYLIB..."
+clang \
+    -x objective-c \
+    -fPIC \
+    -fno-objc-arc \
+    -arch arm64 \
+    -miphoneos-version-min=12.0 \
+    $SYSROOT_FLAG \
     -framework UIKit \
     -framework Foundation \
-    -framework CoreTelephony \
-    -o DeviceIDSpoofer.dylib \
-    Tweak.xm DeviceIDGenerator.m DeviceIDHooks.m
+    -undefined dynamic_lookup \
+    -Wno-deprecated-declarations \
+    -Wno-unused-variable \
+    -shared \
+    -o "$DYLIB" \
+    "$SOURCE"
 
-if [ $? -eq 0 ]; then
-    echo "✅ Build successful!"
-    ls -lh DeviceIDSpoofer.dylib
-    
-    echo ""
-    echo "📱 Installation:"
-    echo "  scp DeviceIDSpoofer.dylib root@<device-ip>:/Library/MobileSubstrate/DynamicLibraries/"
-    echo "  ssh root@<device-ip> killall -9 SpringBoard"
-else
-    echo "❌ Build failed!"
-    exit 1
-fi
+echo ""
+echo "✅ Build successful!"
+ls -lh "$DYLIB"
+echo ""
+echo "📱 Install on a jailbroken device:"
+echo "   scp $DYLIB root@<device-ip>:/Library/MobileSubstrate/DynamicLibraries/"
+echo "   scp DeviceIDSpoofer.plist root@<device-ip>:/Library/MobileSubstrate/DynamicLibraries/"
+echo "   ssh root@<device-ip> killall -9 SpringBoard"
+echo ""
+echo "Or simply run:  make install DEVICE_IP=<device-ip>"

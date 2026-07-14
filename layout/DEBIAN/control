@@ -1,0 +1,11 @@
+Package: com.deviceid.spoofer
+Name: Device ID Spoofer
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Spoof UDID, IDFA and IDFV with a floating ⚙️ control panel.
+ Tap or long-press the button to open the panel.
+ Built without Theos – pure Objective-C dylib.
+Maintainer: alaberplus2-lang
+Author: alaberplus2-lang
+Section: Tweaks
+Depends: mobilesubstrate
