@@ -34,14 +34,18 @@ static NSString *sCustomUDID = nil;
 static NSString *sCustomIDFA = nil;
 static NSString *sCustomIDFV = nil;
 static BOOL      sTweakEnabled = YES;
+static BOOL      sButtonAdded  = NO;   // global guard – prevents double-add
+
+static NSUInteger const kMaxDisplayLength = 28; // chars shown in the ID subtitle
 
 static void LoadSettings(void) {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     sCustomUDID = [d stringForKey:kUDIDKey];
     sCustomIDFA = [d stringForKey:kIDFAKey];
     sCustomIDFV = [d stringForKey:kIDFVKey];
+    // If the key was never set, default to enabled (true).
     id en = [d objectForKey:kEnabledKey];
-    sTweakEnabled = en ? [d boolForKey:kEnabledKey] : YES;
+    sTweakEnabled = en ? [en boolValue] : YES;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,13 +107,17 @@ static void LoadSettings(void) {
 // ── Floating Button ───────────────────────────────────────────────────────────
 
 - (void)addFloatingButton {
+    // Global guard: only ever add the button once across all dispatch callbacks
+    if (sButtonAdded) return;
+
     UIWindow *win = [self activeKeyWindow];
     if (!win) return;
 
-    // Only add once per window
+    // Per-window guard (defensive): don't add a second button to the same window
     for (UIView *v in win.subviews) {
         if (v.tag == 0xDEC0DE) return;
     }
+    sButtonAdded = YES;
 
     CGFloat side = 60.0f;
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -237,7 +245,7 @@ static void LoadSettings(void) {
 
         cell.textLabel.text = titles[ip.row];
         if (val.length > 0) {
-            NSUInteger maxLen = MIN((NSUInteger)28, val.length);
+            NSUInteger maxLen = MIN(kMaxDisplayLength, val.length);
             cell.detailTextLabel.text  = [val substringToIndex:maxLen];
             cell.detailTextLabel.textColor = [UIColor systemBlueColor];
         } else {
