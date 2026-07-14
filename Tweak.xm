@@ -548,6 +548,11 @@ static void InstallHooks(void) {
 // and replaces the value with the user-configured custom device ID.
 // DYLD_INTERPOSE patches the GOT of every image in the process, so the hook
 // fires for both the target app and any frameworks it links.
+//
+// Ownership note: SecItemCopyMatching returns a +1 retained CF object when
+// errSecSuccess. All Security framework return types are toll-free bridged
+// with their Foundation counterparts, so CFRelease / __bridge_retained work
+// identically for both pure CF and bridged NS objects.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #define DYLD_INTERPOSE(_replacement, _replacee) \
