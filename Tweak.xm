@@ -51,15 +51,39 @@ static NSUInteger const kMaxDisplayLength = 28; // chars shown in the ID subtitl
 static NSString * const kPrefsFilePath =
     @"/var/mobile/Library/Preferences/com.deviceid.spoofer.plist";
 
+/// Returns the app-container fallback path (always writable within the sandbox).
+static NSString *FallbackPrefsPath(void) {
+    return [NSHomeDirectory() stringByAppendingPathComponent:
+            @"Library/Preferences/com.deviceid.spoofer.plist"];
+}
+
 /// Returns a mutable snapshot of the on-disk prefs, or an empty dict.
+/// Tries the shared jailbreak path first; falls back to the app container.
 static NSMutableDictionary *ReadPrefs(void) {
     NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:kPrefsFilePath];
+    if (!d) {
+        d = [NSDictionary dictionaryWithContentsOfFile:FallbackPrefsPath()];
+    }
     return d ? [d mutableCopy] : [NSMutableDictionary dictionary];
 }
 
-/// Atomically writes the prefs dict to the shared plist on disk.
+/// Atomically writes the prefs dict to disk.
+/// Tries the shared jailbreak path first; if that fails, writes to the app container.
 static void WritePrefs(NSMutableDictionary *d) {
-    [d writeToFile:kPrefsFilePath atomically:YES];
+    if ([d writeToFile:kPrefsFilePath atomically:YES]) return;
+
+    // Shared path not writable (sandboxed app without Substrate) – use container.
+    NSString *fallback = FallbackPrefsPath();
+    NSString *dir = [fallback stringByDeletingLastPathComponent];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    if (![d writeToFile:fallback atomically:YES]) {
+        NSLog(@"[DeviceIDSpoofer] ❌ WritePrefs: كلا المسارين فشلا – لن تُحفظ الإعدادات");
+    } else {
+        NSLog(@"[DeviceIDSpoofer] ⚠️ WritePrefs: استُخدم مسار حاوية التطبيق (المسار المشترك محمي)");
+    }
 }
 
 static void LoadSettings(void) {
