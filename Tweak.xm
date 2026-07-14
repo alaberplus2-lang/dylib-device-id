@@ -703,7 +703,9 @@ static CFDictionaryRef PatchKeychainWriteAttrs(CFDictionaryRef attrs) {
     NSMutableDictionary *m = [d mutableCopy];
     m[(__bridge id)kSecValueData] =
         [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
-    return (CFDictionaryRef)[m copy];
+    NSDictionary *patched = [m copy];
+    [m release];
+    return (CFDictionaryRef)patched;
 }
 
 static OSStatus my_SecItemAdd(CFDictionaryRef attrs, CFTypeRef *result) {
