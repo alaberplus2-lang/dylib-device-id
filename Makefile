@@ -33,7 +33,7 @@ ifneq ($(SDK),)
 CFLAGS  += -isysroot $(SDK)
 endif
 
-.PHONY: all clean package install help
+.PHONY: all clean package deb install help
 
 all: $(DYLIB)
 
@@ -55,6 +55,22 @@ package: $(DYLIB)
 	@cp $(DYLIB) packages/
 	@echo "✅ Package ready: packages/$(DYLIB)"
 
+deb: $(DYLIB)
+	@echo "📦 Building .deb package..."
+	@rm -rf /tmp/deb-stage
+	@mkdir -p /tmp/deb-stage/DEBIAN
+	@mkdir -p /tmp/deb-stage/Library/MobileSubstrate/DynamicLibraries
+	@cp layout/DEBIAN/control   /tmp/deb-stage/DEBIAN/control
+	@cp layout/DEBIAN/postinst  /tmp/deb-stage/DEBIAN/postinst
+	@chmod 0755 /tmp/deb-stage/DEBIAN/postinst
+	@cp $(DYLIB)  /tmp/deb-stage/Library/MobileSubstrate/DynamicLibraries/
+	@cp $(PLIST)  /tmp/deb-stage/Library/MobileSubstrate/DynamicLibraries/
+	@mkdir -p packages
+	@dpkg-deb -b /tmp/deb-stage packages/$(notdir $(patsubst %.dylib,%.deb,$(DYLIB)))
+	@rm -rf /tmp/deb-stage
+	@echo "✅ DEB ready: packages/$(notdir $(patsubst %.dylib,%.deb,$(DYLIB)))"
+	@ls -lh packages/*.deb
+
 install: $(DYLIB)
 	@[ -n "$(DEVICE_IP)" ] || \
 		(echo "❌  Usage: make install DEVICE_IP=192.168.1.100" && exit 1)
@@ -70,5 +86,5 @@ help:
 	@echo "Targets:"
 	@echo "  make                               Build dylib"
 	@echo "  make clean                         Remove build artefacts"
-	@echo "  make package                       Copy dylib to packages/"
+	@echo "  make deb                           Build .deb package in packages/"
 	@echo "  make install DEVICE_IP=x.x.x.x    Install on jailbroken device"
