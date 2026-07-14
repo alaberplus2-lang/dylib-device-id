@@ -9,7 +9,7 @@ LDFLAGS = -shared -undefined dynamic_lookup
 FRAMEWORKS = -framework UIKit -framework Foundation
 PRIVATE_FRAMEWORKS = -framework CoreTelephony
 
-# Source files
+# Source files - ONLY include Tweak.xm (no SettingsButton.xm)
 SOURCES = Tweak.xm DeviceIDGenerator.m DeviceIDHooks.m
 OBJECTS = $(SOURCES:.m=.o)
 DYLIB = DeviceIDSpoofer.dylib
@@ -21,6 +21,7 @@ $(DYLIB): $(SOURCES)
 	@echo "🔨 Building Device ID Spoofer..."
 	$(CC) $(CFLAGS) $(LDFLAGS) $(FRAMEWORKS) $(PRIVATE_FRAMEWORKS) -o $@ $^
 	@echo "✅ Build successful: $@"
+	@ls -lh $@
 
 clean:
 	@echo "🧹 Cleaning..."
@@ -36,6 +37,11 @@ package: $(DYLIB)
 
 install: $(DYLIB)
 	@echo "📱 Installing on device..."
+	@if [ -z "$(DEVICE_IP)" ]; then \
+		echo "❌ Error: DEVICE_IP not set"; \
+		echo "Usage: make install DEVICE_IP=192.168.1.100"; \
+		exit 1; \
+	fi
 	scp $(DYLIB) root@$(DEVICE_IP):/Library/MobileSubstrate/DynamicLibraries/
 	ssh root@$(DEVICE_IP) killall -9 SpringBoard
 	@echo "✅ Installation complete!"
