@@ -474,7 +474,12 @@ static void InstallHooks(void) {
 
     // ASIdentifierManager – advertisingIdentifier (IDFA)
     // Use NSClassFromString to avoid requiring AdSupport at link time
-    dlopen("/System/Library/Frameworks/AdSupport.framework/AdSupport", RTLD_LAZY);
+    void *adSupportHandle =
+        dlopen("/System/Library/Frameworks/AdSupport.framework/AdSupport", RTLD_LAZY);
+    if (!adSupportHandle) {
+        const char *err = dlerror();
+        NSLog(@"[DeviceIDSpoofer] Failed to load AdSupport: %s", err ? err : "unknown error");
+    }
     Class asmClass = NSClassFromString(@"ASIdentifierManager");
     if (asmClass) {
         SEL idfaSel = NSSelectorFromString(@"advertisingIdentifier");
