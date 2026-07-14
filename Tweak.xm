@@ -563,7 +563,7 @@ static void InstallHooks(void) {
     __attribute__((section("__DATA,__interpose"))) = { \
         (const void *)(unsigned long)&_replacement, \
         (const void *)(unsigned long)&_replacee \
-    }
+    };
 
 static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
     OSStatus status = SecItemCopyMatching(query, result);
@@ -579,7 +579,7 @@ static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result)
         NSString *s = (__bridge NSString *)(*result);
         if (isHex64(s)) {
             CFRelease(*result);
-            *result = (__bridge_retained CFTypeRef)[sCustomDeviceID copy];
+            *result = (CFTypeRef)[sCustomDeviceID copy];
         }
         return status;
     }
@@ -591,7 +591,7 @@ static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result)
         if (isHex64(s)) {
             NSData *newData = [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
             CFRelease(*result);
-            *result = (__bridge_retained CFTypeRef)newData;
+            *result = (CFTypeRef)[newData retain];
         }
         return status;
     }
@@ -622,7 +622,7 @@ static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result)
         }
         if (changed) {
             CFRelease(*result);
-            *result = (__bridge_retained CFTypeRef)[patched copy];
+            *result = (CFTypeRef)[patched copy];
         }
     }
 
