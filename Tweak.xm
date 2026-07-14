@@ -1,6 +1,5 @@
 #import <substrate.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 
 static NSString *customUDID = nil;
 static NSString *customIDFA = nil;
@@ -42,22 +41,59 @@ static DeviceIDSettingsViewController *_sharedInstance = nil;
 }
 
 - (void)addSettingsButton {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    if (!keyWindow) return;
+    UIWindow *window = nil;
+    
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                for (UIWindow *w in scene.windows) {
+                    if (w.isKeyWindow) {
+                        window = w;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        window = [[UIApplication sharedApplication] valueForKey:@"keyWindow"];
+    }
+    
+    if (!window) return;
     
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = CGRectMake(keyWindow.bounds.size.width - 70, keyWindow.bounds.size.height - 130, 60, 60);
+    btn.frame = CGRectMake(window.bounds.size.width - 70, window.bounds.size.height - 130, 60, 60);
     btn.backgroundColor = [UIColor colorWithRed:0.3 green:0.85 blue:0.4 alpha:0.95];
     btn.layer.cornerRadius = 30;
     [btn setTitle:@"⚙️" forState:UIControlStateNormal];
     btn.titleLabel.font = [UIFont systemFontOfSize:28];
     [btn addTarget:self action:@selector(showPanel) forControlEvents:UIControlEventTouchUpInside];
     
-    [keyWindow addSubview:btn];
+    [window addSubview:btn];
 }
 
 - (void)showPanel {
-    UIViewController *root = [UIApplication sharedApplication].keyWindow.rootViewController;
+    UIWindow *window = nil;
+    
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                for (UIWindow *w in scene.windows) {
+                    if (w.isKeyWindow) {
+                        window = w;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        window = [[UIApplication sharedApplication] valueForKey:@"keyWindow"];
+    }
+    
+    if (!window) return;
+    
+    UIViewController *root = window.rootViewController;
+    if (!root) return;
+    
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:self];
     [root presentViewController:nav animated:YES completion:nil];
 }
@@ -185,7 +221,7 @@ static DeviceIDSettingsViewController *_sharedInstance = nil;
 %hook UIApplication
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     BOOL result = %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [[DeviceIDSettingsViewController sharedInstance] addSettingsButton];
     });
     return result;
@@ -222,5 +258,5 @@ static DeviceIDSettingsViewController *_sharedInstance = nil;
 
 %ctor {
     loadCustomValues();
-    NSLog(@"[DeviceIDSpoofer] Loaded successfully!");
+    NSLog(@"[DeviceIDSpoofer] Tweak loaded!");
 }
