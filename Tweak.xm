@@ -39,23 +39,33 @@ static BOOL      sButtonAdded  = NO;   // global guard – prevents double-add
 
 static NSUInteger const kMaxDisplayLength = 28; // chars shown in the ID subtitle
 
-static NSUserDefaults *Prefs(void) {
-    static NSUserDefaults *p = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        p = [[NSUserDefaults alloc] initWithSuiteName:@"com.deviceid.spoofer"];
-        if (!p) p = [NSUserDefaults standardUserDefaults];
-    });
-    return p;
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: Shared plist storage
+// Stored at the standard jailbreak prefs path so every injected process reads
+// the same file, regardless of which app the user last configured the tweak in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static NSString * const kPrefsFilePath =
+    @"/var/mobile/Library/Preferences/com.deviceid.spoofer.plist";
+
+/// Returns a mutable snapshot of the on-disk prefs, or an empty dict.
+static NSMutableDictionary *ReadPrefs(void) {
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:kPrefsFilePath];
+    return d ? [d mutableCopy] : [NSMutableDictionary dictionary];
+}
+
+/// Atomically writes the prefs dict to the shared plist on disk.
+static void WritePrefs(NSMutableDictionary *d) {
+    [d writeToFile:kPrefsFilePath atomically:YES];
 }
 
 static void LoadSettings(void) {
-    NSUserDefaults *d = Prefs();
-    sCustomUDID = [d stringForKey:kUDIDKey];
-    sCustomIDFA = [d stringForKey:kIDFAKey];
-    sCustomIDFV = [d stringForKey:kIDFVKey];
-    // If the key was never set, default to enabled (true).
-    id en = [d objectForKey:kEnabledKey];
+    NSDictionary *d = ReadPrefs();
+    sCustomUDID   = d[kUDIDKey];
+    sCustomIDFA   = d[kIDFAKey];
+    sCustomIDFV   = d[kIDFVKey];
+    // If the key was never written, default to enabled (true).
+    id en = d[kEnabledKey];
     sTweakEnabled = en ? [en boolValue] : YES;
 }
 
@@ -252,7 +262,7 @@ static void LoadSettings(void) {
     } else if (ip.section == 1) {
         NSArray *titles = @[@"UDID", @"IDFA", @"IDFV"];
         NSArray *keys   = @[kUDIDKey, kIDFAKey, kIDFVKey];
-        NSString *val = [Prefs() stringForKey:keys[ip.row]];
+        NSString *val = ReadPrefs()[keys[ip.row]];
 
         cell.textLabel.text = titles[ip.row];
         if (val.length > 0) {
@@ -317,9 +327,9 @@ static BOOL isValidUUID(NSString *s) {
 
 - (void)toggleEnabled:(UISwitch *)sw {
     sTweakEnabled = sw.on;
-    NSUserDefaults *d = Prefs();
-    [d setBool:sTweakEnabled forKey:kEnabledKey];
-    [d synchronize];
+    NSMutableDictionary *d = ReadPrefs();
+    d[kEnabledKey] = @(sTweakEnabled);
+    WritePrefs(d);
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
                   withRowAnimation:UITableViewRowAnimationAutomatic];
 }
@@ -341,7 +351,7 @@ static BOOL isValidUUID(NSString *s) {
 
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
         tf.placeholder              = hints[idx];
-        tf.text                     = [Prefs() stringForKey:key] ?: @"";
+        tf.text                     = ReadPrefs()[key] ?: @"";
         tf.autocorrectionType       = UITextAutocorrectionTypeNo;
         tf.autocapitalizationType   = UITextAutocapitalizationTypeNone;
     }];
@@ -367,10 +377,10 @@ static BOOL isValidUUID(NSString *s) {
             return;
         }
 
-        NSUserDefaults *d = Prefs();
-        if (v.length > 0) [d setObject:v forKey:key];
+        NSMutableDictionary *d = ReadPrefs();
+        if (v.length > 0) d[key] = v;
         else              [d removeObjectForKey:key];
-        [d synchronize];
+        WritePrefs(d);
         LoadSettings();
         [self showRestartRequiredWithTitle:@"✅ تم الحفظ"
                                   message:[NSString stringWithFormat:@"تم حفظ %@.", titles[idx]]];
@@ -383,11 +393,11 @@ static BOOL isValidUUID(NSString *s) {
 }
 
 - (void)generateRandomIDs {
-    NSUserDefaults *d = Prefs();
-    [d setObject:[NSUUID UUID].UUIDString forKey:kUDIDKey];
-    [d setObject:[NSUUID UUID].UUIDString forKey:kIDFAKey];
-    [d setObject:[NSUUID UUID].UUIDString forKey:kIDFVKey];
-    [d synchronize];
+    NSMutableDictionary *d = ReadPrefs();
+    d[kUDIDKey] = [NSUUID UUID].UUIDString;
+    d[kIDFAKey] = [NSUUID UUID].UUIDString;
+    d[kIDFVKey] = [NSUUID UUID].UUIDString;
+    WritePrefs(d);
     LoadSettings();
     [self showRestartRequiredWithTitle:@"✅ تم التوليد"
                                message:@"تم توليد معرفات عشوائية جديدة بنجاح."];
@@ -403,11 +413,11 @@ static BOOL isValidUUID(NSString *s) {
         actionWithTitle:@"نعم، إعادة تعيين"
                   style:UIAlertActionStyleDestructive
                 handler:^(UIAlertAction *a) {
-        NSUserDefaults *d = Prefs();
+        NSMutableDictionary *d = ReadPrefs();
         [d removeObjectForKey:kUDIDKey];
         [d removeObjectForKey:kIDFAKey];
         [d removeObjectForKey:kIDFVKey];
-        [d synchronize];
+        WritePrefs(d);
         LoadSettings();
         [self.tableView reloadData];
     }]];
@@ -506,8 +516,11 @@ __attribute__((constructor))
 static void DeviceIDSpooferInit(void) {
     LoadSettings();
     InstallHooks();
-    NSLog(@"[DeviceIDSpoofer] Loaded  |  Tweak %@",
-          sTweakEnabled ? @"ENABLED ✅" : @"DISABLED ❌");
+    NSLog(@"[DeviceIDSpoofer] Loaded  |  Tweak %@  |  UDID=%@  IDFA=%@  IDFV=%@",
+          sTweakEnabled ? @"ENABLED ✅" : @"DISABLED ❌",
+          sCustomUDID ?: @"(real)",
+          sCustomIDFA ?: @"(real)",
+          sCustomIDFV ?: @"(real)");
 
     // Wait for the app to finish launching, then add the floating button
     [[NSNotificationCenter defaultCenter]
