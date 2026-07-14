@@ -1,217 +1,145 @@
-# Device ID Spoofer - Theos Tweak
+# Device ID Spoofer – dylib
 
-تطبيق Theos متقدم لتغيير وتزييف معرفات الأجهزة في تطبيقات iOS.
+مكتبة **dylib** خفيفة بالكامل بـ Objective-C تضخّ نفسها في أي تطبيق iOS لتعديل وتزييف معرّفات الجهاز، مع لوحة تحكم عائمة أنيقة.
 
 ## الميزات ✨
 
-يقوم هذا التوك (Tweak) بتغيير جميع معرفات الأجهزة التالية:
-
-### 1. **UDID** (Unique Device Identifier)
-- معرف فريد للجهاز القديم (مستخدم في iOS 5 والإصدارات الأقدم)
-- يتم توليد UDID عشوائي وحفظه بشكل دائم
-
-### 2. **IDFA** (Identifier for Advertisers)
-- معرف الإعلانات المستخدم من قبل شركات الإعلانات
-- يتم توليد معرف عشوائي فريد لكل تطبيق
-
-### 3. **IDFV** (Identifier for Vendor)
-- معرف الشركة المصنعة للتطبيق
-- يتم توليد معرف عشوائي فريد لكل ناشر تطبيق
-
-### 4. **Serial Number**
-- رقم تسلسلي الجهاز
-- يتم توليد رقم وهمي فريد
-
-### 5. **MAC Address**
-- عنوان MAC للجهاز
-- يتم توليد عنوان وهمي
-
-### 6. **Bundle Identifier**
-- معرف الحزمة للتطبيق
-- يتم تسجيل الوصول فقط
-
-## المتطلبات 📋
-
-```bash
-- Theos development environment
-- iOS SDK
-- MobileSubstrate
-- iPhone/iPad مع iOS 12+
-```
-
-## التثبيت 🚀
-
-### 1. استنساخ المستودع
-```bash
-git clone https://github.com/alaberplus2-lang/dylib-device-id.git
-cd dylib-device-id
-```
-
-### 2. إعداد متغيرات البيئة
-```bash
-export THEOS=/opt/theos
-export PATH=$THEOS/bin:$PATH
-```
-
-### 3. البناء
-```bash
-make package
-```
-
-### 4. التثبيت على الجهاز
-```bash
-make install
-```
-
-### 5. إعادة تشغيل SpringBoard
-```bash
-make respring
-```
+| الميزة | التفاصيل |
+|--------|---------|
+| زر عائم ⚙️ | يظهر تلقائياً في كل تطبيق مُضاف إليه الـ dylib |
+| **نقرة** أو **ضغطة مطوّلة** | كلاهما يفتح لوحة التحكم |
+| سحب الزر | يمكن تحريك الزر لأي مكان على الشاشة |
+| تعديل **UDID** | معرّف الجهاز الفريد |
+| تعديل **IDFA** | معرّف الإعلانات |
+| تعديل **IDFV** | معرّف المطوّر |
+| توليد عشوائي | معرّفات UUID جديدة بنقرة واحدة |
+| إعادة تعيين | حذف جميع المعرّفات المخصّصة |
+| تفعيل / تعطيل | مفتاح للتحكم بالـ Tweak بالكامل |
+| تخزين دائم | القيم محفوظة في NSUserDefaults |
+| iOS 12+ / arm64 | لا يتطلب Theos أو Substrate للبناء |
 
 ## البنية 🏗️
 
 ```
 dylib-device-id/
-├── Makefile                  # ملف البناء Theos
-├── control                   # معلومات الحزمة
-├── Tweak.xm                  # ملف Logos الرئيسي مع جميع الـ hooks
-├── DeviceIDHooks.h          # رؤوس Hooks
-├── DeviceIDHooks.m          # تنفيذ Hooks
-├── DeviceIDGenerator.h      # رؤوس مولد المعرفات
-├── DeviceIDGenerator.m      # تنفيذ مولد المعرفات
-└── README.md                # هذا الملف
+├── Tweak.xm                    ← الكود الرئيسي (Pure Objective-C)
+├── Makefile                    ← بناء بدون Theos
+├── build.sh                    ← سكريبت بناء سريع
+├── control                     ← معلومات الحزمة
+├── DeviceIDSpoofer.plist       ← فلتر Substrate (لكل التطبيقات)
+├── layout/
+│   ├── DEBIAN/
+│   │   ├── control
+│   │   └── postinst
+│   └── Library/MobileSubstrate/DynamicLibraries/
+│       └── DeviceIDSpoofer.plist
+├── DeviceIDGenerator.h / .m    ← مولّد المعرّفات
+└── DeviceIDHooks.h / .m        ← مساعد الـ Hooks
 ```
 
-## التفاصيل التقنية 🔧
+## المتطلبات 📋
 
-### آلية العمل
+- macOS مع **Xcode** و **Command Line Tools**
+- لا يلزم تثبيت Theos أو Substrate
 
-1. **التشغيل**: عند تحميل التوك، يتم تنفيذ دالة `%ctor` التي تعد جميع الـ hooks
-
-2. **الـ Hooks**: يتم اعتراض استدعاءات الـ API التالية:
-   - `UIDevice.uniqueIdentifier` → UDID
-   - `UIDevice.identifierForVendor` → IDFV
-   - `ASIdentifierManager.advertisingIdentifier` → IDFA
-   - `NSBundle.bundleIdentifier` → Bundle ID
-
-3. **التوليد**: كل معرف يتم توليده عشوائياً مرة واحدة ثم حفظه في `NSUserDefaults` للبقاء ثابتاً
-
-4. **التسجيل**: جميع الاستدعاءات يتم تسجيلها في syslog للتحقق
-
-### الملفات الرئيسية
-
-#### `Tweak.xm`
-ملف Logos الذي يحتوي على جميع الـ hooks باستخدام syntax Logos:
-```objc
-%hook ClassName
-- (returnType)method {
-    // Custom implementation
-    return %orig;
-}
-%end
-```
-
-#### `DeviceIDGenerator.m`
-مولد المعرفات الذي يوفر:
-- توليد معرفات عشوائية
-- حفظ دائم في NSUserDefaults
-- دوال مساعدة للعمل مع الـ UUIDs
-
-#### `DeviceIDHooks.m`
-إعداد جميع الـ hooks باستخدام Objective-C Runtime
-
-## الاستخدام 💻
-
-### عرض السجلات
 ```bash
-# من جهاز مرتبط
-ssh root@<device-ip>
-tail -f /var/log/syslog | grep DeviceIDSpoofer
-
-# أو استخدام Xcode console
+xcode-select --install   # إذا لم تكن مثبّتة
 ```
 
-### التحقق من التوك
-1. ثبت التوك
-2. اذهب إلى Settings > Installed Tweaks
-3. تأكد من تفعيل "Device ID Spoofer"
-4. أعد تشغيل التطبيقات
+## البناء 🔨
 
-### تعطيل التوك مؤقتاً
 ```bash
-# استخدام iCleaner Pro أو:
-ssh root@<device-ip>
-# قم بإزالة الملف من /Library/MobileSubstrate/DynamicLibraries/
+git clone https://github.com/alaberplus2-lang/dylib-device-id.git
+cd dylib-device-id
+
+# الطريقة 1 – Makefile
+make
+
+# الطريقة 2 – سكريبت
+./build.sh
+
+# تنظيف
+make clean
 ```
 
-## المتغيرات المحفوظة 💾
+النتيجة: `DeviceIDSpoofer.dylib`
 
-يتم حفظ المعرفات الوهمية في NSUserDefaults تحت المفاتيح التالية:
-- `com.deviceid.fake.udid` - UDID الوهمي
-- `com.deviceid.fake.idfa` - IDFA الوهمي
-- `com.deviceid.fake.idfv` - IDFV الوهمي
-- `com.deviceid.fake.serial` - رقم التسلسل الوهمي
-- `com.deviceid.fake.mac` - MAC Address الوهمي
+## التثبيت على جهاز مجلبر 📱
 
-## التطوير المستقبلي 🚧
-
-- [ ] إضافة واجهة تحكم للتغيير السريع للمعرفات
-- [ ] دعم تطبيقات محددة فقط (whitelist)
-- [ ] توليد معرفات عشوائية جديدة بشكل دوري
-- [ ] دعم macOS
-- [ ] تسجيل تفصيلي أكثر
-- [ ] واجهة ويب للتحكم
-
-## الحذر والملاحظات ⚠️
-
-1. **الخصوصية**: استخدم هذا التوك فقط للأغراض القانونية
-2. **التطبيقات المصرفية**: قد لا تعمل مع تطبيقات مصرفية معينة
-3. **AppStore**: قد يتم اكتشاف هذا التوك من قبل تطبيقات متقدمة
-4. **النسخ الاحتياطية**: اعمل نسخة احتياطية قبل التثبيت
-
-## استكشاف الأخطاء 🐛
-
-### المشكلة: التوك لا يحمل
 ```bash
-# تحقق من السجلات
-ssh root@<device-ip>
-tail -f /var/log/syslog
+# عبر make مباشرة
+make install DEVICE_IP=192.168.1.100
 
-# تأكد من التثبيت
-dpkg -l | grep DeviceIDSpoofer
+# أو يدوياً
+scp DeviceIDSpoofer.dylib root@192.168.1.100:/Library/MobileSubstrate/DynamicLibraries/
+scp DeviceIDSpoofer.plist root@192.168.1.100:/Library/MobileSubstrate/DynamicLibraries/
+ssh root@192.168.1.100 killall -9 SpringBoard
 ```
 
-### المشكلة: المعرفات لا تتغير
-- تأكد من إعادة تشغيل التطبيق
-- استخدم Respring بدلاً من Reboot
-- تحقق من السجلات
+## دمج الـ dylib مع تطبيق (بدون جلبريك) 💉
 
-### المشكلة: تضارب مع توكات أخرى
-- عطل التوكات الأخرى ذات الصلة
-- استخدم iCleaner Pro لتنظيف الآثار
+### باستخدام `insert_dylib`:
+```bash
+# ثبّت insert_dylib من: https://github.com/Tyilo/insert_dylib
+insert_dylib @executable_path/DeviceIDSpoofer.dylib YourApp.app/YourApp --strip-codesig
+
+# نسخ الـ dylib
+cp DeviceIDSpoofer.dylib YourApp.app/
+
+# إعادة التوقيع وإعادة الحزم
+codesign -fs - --deep YourApp.app
+```
+
+### باستخدام `optool`:
+```bash
+optool install -c load -p @executable_path/DeviceIDSpoofer.dylib -t YourApp.app/YourApp
+```
+
+## الاستخدام داخل التطبيق 🎛️
+
+بعد إضافة الـ dylib:
+
+1. افتح التطبيق
+2. ابحث عن الزر الأخضر ⚙️ في الزاوية السفلية اليمنى
+3. اضغط عليه أو اضغط مطوّلاً لفتح لوحة التحكم
+4. من لوحة التحكم يمكنك:
+   - مشاهدة الحالة الحالية
+   - تعديل UDID / IDFA / IDFV يدوياً
+   - توليد معرّفات عشوائية
+   - إعادة تعيين الكل
+   - تفعيل أو تعطيل الـ Tweak
+
+## متغيرات NSUserDefaults 💾
+
+| المفتاح | الوصف |
+|---------|-------|
+| `com.deviceid.custom.udid` | UDID المخصّص |
+| `com.deviceid.custom.idfa` | IDFA المخصّص |
+| `com.deviceid.custom.idfv` | IDFV المخصّص |
+| `com.deviceid.enabled`     | حالة التفعيل |
+
+## آلية العمل 🔧
+
+```
+__attribute__((constructor))
+    ├── LoadSettings()     ← تحميل القيم المحفوظة
+    ├── InstallHooks()     ← method_setImplementation لـ UIDevice + ASIdentifierManager
+    └── dispatch_after()   ← إضافة الزر العائم بعد تشغيل التطبيق
+```
+
+لا يتطلب `%hook` / `%orig` – يعمل بمجرد تحميل المكتبة في أي عملية.
+
+## ملاحظات ⚠️
+
+- استخدم هذه الأداة للأغراض القانونية فقط (الاختبار والتطوير والخصوصية)
+- بعض التطبيقات قد تكتشف التعديل
 
 ## الترخيص 📝
 
-MIT License - انظر LICENSE للتفاصيل
-
-## المساهمة 🤝
-
-الاقتراحات والتحسينات مرحب بها!
-
-```bash
-git checkout -b feature/your-feature
-git commit -am 'Add your feature'
-git push origin feature/your-feature
-```
-
-## الدعم والمساعدة 📧
-
-للأسئلة والمساعدة:
-- فتح issue في GitHub
-- مراسلة بريد إلكتروني
+MIT License
 
 ---
 
-**تم تطويره بواسطة**: alaberplus2-lang  
-**آخر تحديث**: 2026-07-14  
-**الإصدار**: 1.0.0
+**المطوّر**: alaberplus2-lang  
+**الإصدار**: 1.0.0  
+**التاريخ**: 2026-07-14
