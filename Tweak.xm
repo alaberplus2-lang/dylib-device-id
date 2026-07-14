@@ -653,18 +653,54 @@ static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result)
             NSData *vData = mDict[(__bridge id)kSecValueData];
             if ([vData isKindOfClass:[NSData class]]) {
                 NSString *sv = [[NSString alloc] initWithData:vData encoding:NSUTF8StringEncoding];
-                if (isHex64(sv)) {
+                BOOL isHash = isHex64(sv);
+                [sv release];
+                if (isHash) {
                     mDict[(__bridge id)kSecValueData] =
                         [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
                     changed = YES;
                 }
             }
-            [patched addObject:[mDict copy]];
+            NSDictionary *copied = [mDict copy];
+            [patched addObject:copied];
+            [copied release];
+            [mDict release];
         }
         if (changed) {
             CFRelease(*result);
             *result = (CFTypeRef)[patched copy];
         }
+        return status;
+    }
+
+    // Result is a single dictionary of attributes
+    if (resultType == CFDictionaryGetTypeID()) {
+        NSDictionary *dict = (__bridge NSDictionary *)(*result);
+        NSMutableDictionary *mDict = [dict mutableCopy];
+        BOOL changed = NO;
+
+        for (id key in dict) {
+            id val = mDict[key];
+            if ([val isKindOfClass:[NSString class]] && isHex64((NSString *)val)) {
+                mDict[key] = sCustomDeviceID;
+                changed = YES;
+            } else if ([val isKindOfClass:[NSData class]]) {
+                NSString *sv = [[NSString alloc] initWithData:val encoding:NSUTF8StringEncoding];
+                BOOL isHash = isHex64(sv);
+                [sv release];
+                if (isHash) {
+                    mDict[key] = [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
+                    changed = YES;
+                }
+            }
+        }
+
+        if (changed) {
+            CFRelease(*result);
+            NSDictionary *patched = [mDict copy];
+            *result = (CFTypeRef)patched;
+        }
+        [mDict release];
     }
 
     return status;
@@ -728,13 +764,14 @@ DYLD_INTERPOSE(my_SecItemUpdate, SecItemUpdate)
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: NSUserDefaults hooks
 // Many apps compute a SHA-256 device fingerprint on first launch and cache it
-// in NSUserDefaults.  Swizzle -stringForKey: and -objectForKey: so that any
+// in NSUserDefaults.  Swizzle -stringForKey:, -objectForKey:, and -dataForKey:
 // 64-char hex value stored under ANY key is transparently replaced with the
 // user-configured custom device ID.
 // ─────────────────────────────────────────────────────────────────────────────
 
 static IMP sOrigStringForKey  = NULL;
 static IMP sOrigObjectForKey  = NULL;
+static IMP sOrigDataForKey    = NULL;
 
 static NSString *Hooked_stringForKey(NSUserDefaults *self, SEL _cmd, NSString *key) {
     NSString *val = ((NSString *(*)(id, SEL, NSString *))sOrigStringForKey)(self, _cmd, key);
@@ -748,6 +785,18 @@ static id Hooked_objectForKey(NSUserDefaults *self, SEL _cmd, NSString *key) {
     if (sTweakEnabled && sCustomDeviceID.length > 0 &&
         [val isKindOfClass:[NSString class]] && isHex64((NSString *)val))
         return sCustomDeviceID;
+    return val;
+}
+
+static NSData *Hooked_dataForKey(NSUserDefaults *self, SEL _cmd, NSString *key) {
+    NSData *val = ((NSData *(*)(id, SEL, NSString *))sOrigDataForKey)(self, _cmd, key);
+    if (!sTweakEnabled || sCustomDeviceID.length == 0 || ![val isKindOfClass:[NSData class]])
+        return val;
+
+    NSString *decoded = [[NSString alloc] initWithData:val encoding:NSUTF8StringEncoding];
+    BOOL shouldPatch = isHex64(decoded);
+    [decoded release];
+    if (shouldPatch) return [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
     return val;
 }
 
@@ -766,6 +815,13 @@ static void InstallUserDefaultsHooks(void) {
     if (mObj) {
         sOrigObjectForKey = method_getImplementation(mObj);
         method_setImplementation(mObj, (IMP)Hooked_objectForKey);
+    }
+
+    SEL selData = @selector(dataForKey:);
+    Method mData = class_getInstanceMethod(cls, selData);
+    if (mData) {
+        sOrigDataForKey = method_getImplementation(mData);
+        method_setImplementation(mData, (IMP)Hooked_dataForKey);
     }
 
     NSLog(@"[DeviceIDSpoofer] NSUserDefaults hooks installed ✓");
