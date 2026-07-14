@@ -42,6 +42,8 @@ static BOOL      sButtonAdded  = NO;   // global guard – prevents double-add
 
 static NSUInteger const kMaxDisplayLength = 28; // chars shown in the ID subtitle
 
+static void InstallUserDefaultsHooks(void);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: Shared plist storage
 // Stored at the standard jailbreak prefs path so every injected process reads
@@ -701,7 +703,7 @@ static CFDictionaryRef PatchKeychainWriteAttrs(CFDictionaryRef attrs) {
     NSMutableDictionary *m = [d mutableCopy];
     m[(__bridge id)kSecValueData] =
         [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
-    return (__bridge_retained CFDictionaryRef)[m copy];
+    return (CFDictionaryRef)[m copy];
 }
 
 static OSStatus my_SecItemAdd(CFDictionaryRef attrs, CFTypeRef *result) {
