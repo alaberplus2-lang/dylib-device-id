@@ -1,0 +1,48 @@
+# Simple Makefile without Theos
+# Works with standard Xcode tools
+
+.PHONY: all clean package install
+
+CC = clang
+CFLAGS = -fPIC -fno-objc-arc -fobjc-abi-version=2
+LDFLAGS = -shared -undefined dynamic_lookup
+FRAMEWORKS = -framework UIKit -framework Foundation
+PRIVATE_FRAMEWORKS = -framework CoreTelephony
+
+# Source files
+SOURCES = Tweak.xm DeviceIDGenerator.m DeviceIDHooks.m
+OBJECTS = $(SOURCES:.m=.o)
+DYLIB = DeviceIDSpoofer.dylib
+PACKAGE_NAME = DeviceIDSpoofer.deb
+
+all: $(DYLIB)
+
+$(DYLIB): $(SOURCES)
+	@echo "🔨 Building Device ID Spoofer..."
+	$(CC) $(CFLAGS) $(LDFLAGS) $(FRAMEWORKS) $(PRIVATE_FRAMEWORKS) -o $@ $^
+	@echo "✅ Build successful: $@"
+
+clean:
+	@echo "🧹 Cleaning..."
+	rm -f $(DYLIB) $(OBJECTS) *.o
+	rm -rf packages/ obj/
+	@echo "✅ Clean complete"
+
+package: $(DYLIB)
+	@echo "📦 Creating package..."
+	mkdir -p packages
+	cp $(DYLIB) packages/
+	@echo "✅ Package ready in packages/"
+
+install: $(DYLIB)
+	@echo "📱 Installing on device..."
+	scp $(DYLIB) root@$(DEVICE_IP):/Library/MobileSubstrate/DynamicLibraries/
+	ssh root@$(DEVICE_IP) killall -9 SpringBoard
+	@echo "✅ Installation complete!"
+
+help:
+	@echo "Available targets:"
+	@echo "  make              - Build the dylib"
+	@echo "  make clean        - Remove build files"
+	@echo "  make package      - Create package"
+	@echo "  make install DEVICE_IP=192.168.1.100  - Install on device"
