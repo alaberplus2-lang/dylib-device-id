@@ -20,6 +20,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <dlfcn.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: Constants & State
@@ -38,8 +39,18 @@ static BOOL      sButtonAdded  = NO;   // global guard – prevents double-add
 
 static NSUInteger const kMaxDisplayLength = 28; // chars shown in the ID subtitle
 
+static NSUserDefaults *Prefs(void) {
+    static NSUserDefaults *p = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        p = [[NSUserDefaults alloc] initWithSuiteName:@"com.deviceid.spoofer"];
+        if (!p) p = [NSUserDefaults standardUserDefaults];
+    });
+    return p;
+}
+
 static void LoadSettings(void) {
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSUserDefaults *d = Prefs();
     sCustomUDID = [d stringForKey:kUDIDKey];
     sCustomIDFA = [d stringForKey:kIDFAKey];
     sCustomIDFV = [d stringForKey:kIDFVKey];
@@ -241,7 +252,7 @@ static void LoadSettings(void) {
     } else if (ip.section == 1) {
         NSArray *titles = @[@"UDID", @"IDFA", @"IDFV"];
         NSArray *keys   = @[kUDIDKey, kIDFAKey, kIDFVKey];
-        NSString *val = [[NSUserDefaults standardUserDefaults] stringForKey:keys[ip.row]];
+        NSString *val = [Prefs() stringForKey:keys[ip.row]];
 
         cell.textLabel.text = titles[ip.row];
         if (val.length > 0) {
@@ -306,7 +317,7 @@ static BOOL isValidUUID(NSString *s) {
 
 - (void)toggleEnabled:(UISwitch *)sw {
     sTweakEnabled = sw.on;
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSUserDefaults *d = Prefs();
     [d setBool:sTweakEnabled forKey:kEnabledKey];
     [d synchronize];
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
@@ -330,7 +341,7 @@ static BOOL isValidUUID(NSString *s) {
 
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
         tf.placeholder              = hints[idx];
-        tf.text                     = [[NSUserDefaults standardUserDefaults] stringForKey:key] ?: @"";
+        tf.text                     = [Prefs() stringForKey:key] ?: @"";
         tf.autocorrectionType       = UITextAutocorrectionTypeNo;
         tf.autocapitalizationType   = UITextAutocapitalizationTypeNone;
     }];
@@ -356,7 +367,7 @@ static BOOL isValidUUID(NSString *s) {
             return;
         }
 
-        NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+        NSUserDefaults *d = Prefs();
         if (v.length > 0) [d setObject:v forKey:key];
         else              [d removeObjectForKey:key];
         [d synchronize];
@@ -372,7 +383,7 @@ static BOOL isValidUUID(NSString *s) {
 }
 
 - (void)generateRandomIDs {
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSUserDefaults *d = Prefs();
     [d setObject:[NSUUID UUID].UUIDString forKey:kUDIDKey];
     [d setObject:[NSUUID UUID].UUIDString forKey:kIDFAKey];
     [d setObject:[NSUUID UUID].UUIDString forKey:kIDFVKey];
@@ -392,7 +403,7 @@ static BOOL isValidUUID(NSString *s) {
         actionWithTitle:@"نعم، إعادة تعيين"
                   style:UIAlertActionStyleDestructive
                 handler:^(UIAlertAction *a) {
-        NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+        NSUserDefaults *d = Prefs();
         [d removeObjectForKey:kUDIDKey];
         [d removeObjectForKey:kIDFAKey];
         [d removeObjectForKey:kIDFVKey];
@@ -446,6 +457,8 @@ static void InstallHooks(void) {
         sOrigUniqueIdentifier =
             (UniqueIdentifierIMP)method_getImplementation(udidM);
         method_setImplementation(udidM, (IMP)Hooked_uniqueIdentifier);
+    } else {
+        NSLog(@"[DeviceIDSpoofer] uniqueIdentifier not found (expected on modern iOS)");
     }
 
     // UIDevice – identifierForVendor (IDFV)
@@ -455,10 +468,13 @@ static void InstallHooks(void) {
         sOrigIdentifierForVendor =
             (IdentifierForVendorIMP)method_getImplementation(idfvM);
         method_setImplementation(idfvM, (IMP)Hooked_identifierForVendor);
+    } else {
+        NSLog(@"[DeviceIDSpoofer] identifierForVendor hook failed: selector not found");
     }
 
     // ASIdentifierManager – advertisingIdentifier (IDFA)
     // Use NSClassFromString to avoid requiring AdSupport at link time
+    dlopen("/System/Library/Frameworks/AdSupport.framework/AdSupport", RTLD_LAZY);
     Class asmClass = NSClassFromString(@"ASIdentifierManager");
     if (asmClass) {
         SEL idfaSel = NSSelectorFromString(@"advertisingIdentifier");
@@ -467,7 +483,11 @@ static void InstallHooks(void) {
             sOrigAdvertisingId =
                 (AdvertisingIdentifierIMP)method_getImplementation(idfaM);
             method_setImplementation(idfaM, (IMP)Hooked_advertisingIdentifier);
+        } else {
+            NSLog(@"[DeviceIDSpoofer] advertisingIdentifier hook failed: selector not found");
         }
+    } else {
+        NSLog(@"[DeviceIDSpoofer] ASIdentifierManager class not loaded");
     }
 
     NSLog(@"[DeviceIDSpoofer] Hooks installed ✓");
