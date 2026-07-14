@@ -577,6 +577,7 @@ static void InstallHooks(void) {
     }
 
     NSLog(@"[DeviceIDSpoofer] Hooks installed ✓");
+    InstallUserDefaultsHooks();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -668,6 +669,103 @@ static OSStatus my_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result)
 }
 
 DYLD_INTERPOSE(my_SecItemCopyMatching, SecItemCopyMatching)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: Keychain write interpose – SecItemAdd / SecItemUpdate
+// When an app writes a 64-char hex device fingerprint to the keychain for the
+// first time (SecItemAdd) or updates it (SecItemUpdate), replace the value
+// with the user-configured custom device ID so the stored value is immediately
+// our fake ID.  This prevents the app from persisting the real hardware ID
+// before our read-side hook ever fires.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Replaces any 64-char hex kSecValueData in attrs with the custom device ID.
+/// Returns a new autoreleased dictionary, or nil if nothing changed.
+static CFDictionaryRef PatchKeychainWriteAttrs(CFDictionaryRef attrs) {
+    if (!sTweakEnabled || !sCustomDeviceID || sCustomDeviceID.length == 0)
+        return nil;
+
+    NSDictionary *d = (__bridge NSDictionary *)attrs;
+    id vData = d[(__bridge id)kSecValueData];
+    NSString *strVal = nil;
+
+    if ([vData isKindOfClass:[NSData class]]) {
+        strVal = [[NSString alloc] initWithData:(NSData *)vData
+                                      encoding:NSUTF8StringEncoding];
+    } else if ([vData isKindOfClass:[NSString class]]) {
+        strVal = (NSString *)vData;
+    }
+
+    if (!isHex64(strVal)) return nil;
+
+    NSMutableDictionary *m = [d mutableCopy];
+    m[(__bridge id)kSecValueData] =
+        [sCustomDeviceID dataUsingEncoding:NSUTF8StringEncoding];
+    return (__bridge_retained CFDictionaryRef)[m copy];
+}
+
+static OSStatus my_SecItemAdd(CFDictionaryRef attrs, CFTypeRef *result) {
+    CFDictionaryRef patched = PatchKeychainWriteAttrs(attrs);
+    OSStatus st = SecItemAdd(patched ? patched : attrs, result);
+    if (patched) CFRelease(patched);
+    return st;
+}
+
+static OSStatus my_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attrs) {
+    CFDictionaryRef patched = PatchKeychainWriteAttrs(attrs);
+    OSStatus st = SecItemUpdate(query, patched ? patched : attrs);
+    if (patched) CFRelease(patched);
+    return st;
+}
+
+DYLD_INTERPOSE(my_SecItemAdd,    SecItemAdd)
+DYLD_INTERPOSE(my_SecItemUpdate, SecItemUpdate)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: NSUserDefaults hooks
+// Many apps compute a SHA-256 device fingerprint on first launch and cache it
+// in NSUserDefaults.  Swizzle -stringForKey: and -objectForKey: so that any
+// 64-char hex value stored under ANY key is transparently replaced with the
+// user-configured custom device ID.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static IMP sOrigStringForKey  = NULL;
+static IMP sOrigObjectForKey  = NULL;
+
+static NSString *Hooked_stringForKey(NSUserDefaults *self, SEL _cmd, NSString *key) {
+    NSString *val = ((NSString *(*)(id, SEL, NSString *))sOrigStringForKey)(self, _cmd, key);
+    if (sTweakEnabled && sCustomDeviceID.length > 0 && isHex64(val))
+        return sCustomDeviceID;
+    return val;
+}
+
+static id Hooked_objectForKey(NSUserDefaults *self, SEL _cmd, NSString *key) {
+    id val = ((id (*)(id, SEL, NSString *))sOrigObjectForKey)(self, _cmd, key);
+    if (sTweakEnabled && sCustomDeviceID.length > 0 &&
+        [val isKindOfClass:[NSString class]] && isHex64((NSString *)val))
+        return sCustomDeviceID;
+    return val;
+}
+
+static void InstallUserDefaultsHooks(void) {
+    Class cls = [NSUserDefaults class];
+
+    SEL selStr = @selector(stringForKey:);
+    Method mStr = class_getInstanceMethod(cls, selStr);
+    if (mStr) {
+        sOrigStringForKey = method_getImplementation(mStr);
+        method_setImplementation(mStr, (IMP)Hooked_stringForKey);
+    }
+
+    SEL selObj = @selector(objectForKey:);
+    Method mObj = class_getInstanceMethod(cls, selObj);
+    if (mObj) {
+        sOrigObjectForKey = method_getImplementation(mObj);
+        method_setImplementation(mObj, (IMP)Hooked_objectForKey);
+    }
+
+    NSLog(@"[DeviceIDSpoofer] NSUserDefaults hooks installed ✓");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: Constructor – runs when the dylib is injected into any process
