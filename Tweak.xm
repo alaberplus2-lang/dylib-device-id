@@ -273,6 +273,34 @@ static void LoadSettings(void) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MARK: Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shows an alert telling the user to restart the app so the hook takes effect
+/// on already-cached identifiers.
+- (void)showRestartRequiredWithTitle:(NSString *)title message:(NSString *)msg {
+    UIAlertController *a = [UIAlertController
+        alertControllerWithTitle:title
+                         message:[NSString stringWithFormat:
+                                  @"%@\n\n⚠️ أغلق التطبيق تماماً وأعد فتحه حتى تنعكس التغييرات.",
+                                  msg]
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"حسناً"
+                                          style:UIAlertActionStyleDefault
+                                        handler:^(UIAlertAction *_) {
+        [self.tableView reloadData];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+/// Returns YES if the string is a valid UUID (with or without dashes).
+static BOOL isValidUUID(NSString *s) {
+    if (!s || s.length == 0) return NO;
+    // Accepts the standard 8-4-4-4-12 form that NSUUID expects
+    return [[NSUUID alloc] initWithUUIDString:s] != nil;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MARK: Actions
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -311,13 +339,30 @@ static void LoadSettings(void) {
         actionWithTitle:@"حفظ"
                   style:UIAlertActionStyleDefault
                 handler:^(UIAlertAction *a) {
-        NSString *v = alert.textFields.firstObject.text;
+        NSString *v = [alert.textFields.firstObject.text
+                       stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+
+        // IDFA (idx=1) and IDFV (idx=2) must be valid UUIDs so the hook
+        // can reconstruct them via -[NSUUID initWithUUIDString:].
+        if (v.length > 0 && idx != 0 && !isValidUUID(v)) {
+            UIAlertController *err = [UIAlertController
+                alertControllerWithTitle:@"❌ صيغة غير صحيحة"
+                                 message:@"يجب أن تكون القيمة UUID صحيحة\nمثال: 550e8400-e29b-41d4-a716-446655440000"
+                          preferredStyle:UIAlertControllerStyleAlert];
+            [err addAction:[UIAlertAction actionWithTitle:@"حسناً"
+                                                    style:UIAlertActionStyleDefault
+                                                  handler:nil]];
+            [self presentViewController:err animated:YES completion:nil];
+            return;
+        }
+
         NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
         if (v.length > 0) [d setObject:v forKey:key];
         else              [d removeObjectForKey:key];
         [d synchronize];
         LoadSettings();
-        [self.tableView reloadData];
+        [self showRestartRequiredWithTitle:@"✅ تم الحفظ"
+                                  message:[NSString stringWithFormat:@"تم حفظ %@.", titles[idx]]];
     }]];
 
     [alert addAction:[UIAlertAction actionWithTitle:@"إلغاء"
@@ -333,17 +378,8 @@ static void LoadSettings(void) {
     [d setObject:[NSUUID UUID].UUIDString forKey:kIDFVKey];
     [d synchronize];
     LoadSettings();
-
-    UIAlertController *ok = [UIAlertController
-        alertControllerWithTitle:@"✅ تم التوليد"
-                         message:@"تم توليد معرفات عشوائية جديدة بنجاح"
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [ok addAction:[UIAlertAction actionWithTitle:@"حسناً"
-                                           style:UIAlertActionStyleDefault
-                                         handler:^(UIAlertAction *a) {
-        [self.tableView reloadData];
-    }]];
-    [self presentViewController:ok animated:YES completion:nil];
+    [self showRestartRequiredWithTitle:@"✅ تم التوليد"
+                               message:@"تم توليد معرفات عشوائية جديدة بنجاح."];
 }
 
 - (void)resetAllIDs {
